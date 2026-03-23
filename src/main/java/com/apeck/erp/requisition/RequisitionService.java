@@ -3,6 +3,7 @@ package com.apeck.erp.requisition;
 import com.apeck.erp.common.exception.BadRequestException;
 import com.apeck.erp.common.exception.ResourceNotFoundException;
 import com.apeck.erp.common.util.NumberGenerator;
+import com.apeck.erp.notification.NotificationService;
 import com.apeck.erp.requisition.dto.*;
 import com.apeck.erp.security.UserPrincipal;
 import com.apeck.erp.user.User;
@@ -22,7 +23,7 @@ import java.util.stream.Collectors;
 
 /**
  * Requisition Service
- * Handles cash requisition business logic
+ * Handles cash requisition business logic with notifications
  */
 @Slf4j
 @Service
@@ -31,6 +32,7 @@ public class RequisitionService {
 
     private final CashRequisitionRepository requisitionRepository;
     private final UserRepository userRepository;
+    private final NotificationService notificationService;
 
     /**
      * Create new cash requisition
@@ -112,7 +114,7 @@ public class RequisitionService {
     }
 
     /**
-     * Approve requisition
+     * Approve requisition (with notification)
      */
     @Transactional
     public RequisitionResponse approveRequisition(Long id, ApproveRequisitionRequest request) {
@@ -138,13 +140,21 @@ public class RequisitionService {
         
         requisition = requisitionRepository.save(requisition);
         
+        // Send notification to requester
+        notificationService.createRequisitionApprovedNotification(
+            requisition.getRequestedBy().getId(),
+            requisition.getRequisitionNumber(),
+            requisition.getApprovedAmount(),
+            requisition.getId()
+        );
+        
         log.info("Requisition approved: {}", requisition.getRequisitionNumber());
         
         return mapToResponse(requisition);
     }
 
     /**
-     * Reject requisition
+     * Reject requisition (with notification)
      */
     @Transactional
     public RequisitionResponse rejectRequisition(Long id, RejectRequisitionRequest request) {
@@ -165,13 +175,21 @@ public class RequisitionService {
         
         requisition = requisitionRepository.save(requisition);
         
+        // Send notification to requester
+        notificationService.createRequisitionRejectedNotification(
+            requisition.getRequestedBy().getId(),
+            requisition.getRequisitionNumber(),
+            requisition.getRejectionReason(),
+            requisition.getId()
+        );
+        
         log.info("Requisition rejected: {}", requisition.getRequisitionNumber());
         
         return mapToResponse(requisition);
     }
 
     /**
-     * Disburse approved requisition
+     * Disburse approved requisition (with notification)
      */
     @Transactional
     public RequisitionResponse disburseRequisition(Long id, DisburseRequisitionRequest request) {
@@ -192,6 +210,15 @@ public class RequisitionService {
         requisition.setPaymentReference(request.getPaymentReference());
         
         requisition = requisitionRepository.save(requisition);
+        
+        // Send notification to requester
+        notificationService.createRequisitionDisbursedNotification(
+            requisition.getRequestedBy().getId(),
+            requisition.getRequisitionNumber(),
+            requisition.getApprovedAmount(),
+            requisition.getPaymentMethod(),
+            requisition.getId()
+        );
         
         log.info("Requisition disbursed: {}", requisition.getRequisitionNumber());
         

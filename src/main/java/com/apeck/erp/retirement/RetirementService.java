@@ -1,31 +1,36 @@
 package com.apeck.erp.retirement;
 
-import com.apeck.erp.common.exception.BadRequestException;
-import com.apeck.erp.common.exception.ResourceNotFoundException;
-import com.apeck.erp.common.util.NumberGenerator;
-import com.apeck.erp.requisition.CashRequisition;
-import com.apeck.erp.requisition.CashRequisitionRepository;
-import com.apeck.erp.retirement.dto.*;
-import com.apeck.erp.security.UserPrincipal;
-import com.apeck.erp.user.User;
-import com.apeck.erp.user.UserRepository;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
+import java.math.BigDecimal;
+import java.time.LocalDateTime;
+import java.util.List;
+import java.util.stream.Collectors;
+
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
-import java.math.BigDecimal;
-import java.time.LocalDateTime;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.stream.Collectors;
+import com.apeck.erp.common.exception.BadRequestException;
+import com.apeck.erp.common.exception.ResourceNotFoundException;
+import com.apeck.erp.common.util.NumberGenerator;
+import com.apeck.erp.notification.NotificationService;
+import com.apeck.erp.requisition.CashRequisition;
+import com.apeck.erp.requisition.CashRequisitionRepository;
+import com.apeck.erp.retirement.dto.AttachmentResponse;
+import com.apeck.erp.retirement.dto.CreateRetirementRequest;
+import com.apeck.erp.retirement.dto.RetirementLineItemRequest;
+import com.apeck.erp.retirement.dto.RetirementResponse;
+import com.apeck.erp.security.UserPrincipal;
+import com.apeck.erp.user.User;
+import com.apeck.erp.user.UserRepository;
+
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 
 /**
  * Retirement Service
- * Handles expenditure retirement business logic
+ * Handles expenditure retirement business logic with notifications
  */
 @Slf4j
 @Service
@@ -38,6 +43,7 @@ public class RetirementService {
     private final CashRequisitionRepository requisitionRepository;
     private final UserRepository userRepository;
     private final FileStorageService fileStorageService;
+    private final NotificationService notificationService;
 
     /**
      * Create new retirement
@@ -159,7 +165,7 @@ public class RetirementService {
     }
 
     /**
-     * Approve retirement
+     * Approve retirement (with notification)
      */
     @Transactional
     public RetirementResponse approveRetirement(Long id, String financeNotes) {
@@ -179,13 +185,20 @@ public class RetirementService {
         
         retirement = retirementRepository.save(retirement);
         
+        // Send notification to submitter
+        notificationService.createRetirementApprovedNotification(
+            retirement.getSubmittedBy().getId(),
+            retirement.getRetirementNumber(),
+            retirement.getId()
+        );
+        
         log.info("Retirement approved: {}", retirement.getRetirementNumber());
         
         return mapToResponse(retirement);
     }
 
     /**
-     * Reject retirement
+     * Reject retirement (with notification)
      */
     @Transactional
     public RetirementResponse rejectRetirement(Long id, String financeNotes) {
@@ -204,6 +217,14 @@ public class RetirementService {
         retirement.setFinanceNotes(financeNotes);
         
         retirement = retirementRepository.save(retirement);
+        
+        // Send notification to submitter
+        notificationService.createRetirementRejectedNotification(
+            retirement.getSubmittedBy().getId(),
+            retirement.getRetirementNumber(),
+            financeNotes,
+            retirement.getId()
+        );
         
         log.info("Retirement rejected: {}", retirement.getRetirementNumber());
         
