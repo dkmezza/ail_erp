@@ -109,53 +109,81 @@ public class NotificationService {
 
     @Transactional
     public void createRetirementApprovedNotification(Long userId, String retirementNumber, Long retirementId) {
-        // Create in-app notification
-        Notification notification = Notification.builder()
-                .userId(userId)
-                .title("Retirement Approved")
-                .message(String.format("Your expenditure retirement %s has been approved", retirementNumber))
-                .type(NotificationType.RETIREMENT_APPROVED)
-                .relatedEntityId(retirementId)
-                .build();
-        
-        notificationRepository.save(notification);
-        log.info("Created RETIREMENT_APPROVED notification for user: {}", userId);
+        try {
+            // Create in-app notification
+            Notification notification = Notification.builder()
+                    .userId(userId)
+                    .title("Retirement Approved")
+                    .message(String.format("Your expenditure retirement %s has been approved", retirementNumber))
+                    .type(NotificationType.RETIREMENT_APPROVED)
+                    .relatedEntityId(retirementId)
+                    .isRead(false)  // ✅ ADD THIS LINE
+                    .build();
+            
+            notificationRepository.save(notification);
+            log.info("Created RETIREMENT_APPROVED notification for user: {}", userId);
 
-        // Send email
-        User user = userRepository.findById(userId).orElse(null);
-        if (user != null && user.getEmail() != null) {
-            String emailBody = emailService.buildRetirementApprovedEmail(retirementNumber);
-            emailService.sendEmail(user.getEmail(), "Retirement Approved - " + retirementNumber, emailBody);
+            // Send email
+            User user = userRepository.findById(userId).orElse(null);
+            if (user != null && user.getEmail() != null) {
+                String emailBody = emailService.buildRetirementApprovedEmail(retirementNumber);
+                emailService.sendEmail(user.getEmail(), "Retirement Approved - " + retirementNumber, emailBody);
+            }
+        } catch (Exception e) {
+            log.error("Failed to create RETIREMENT_APPROVED notification for user {}: {}", userId, e.getMessage(), e);
+            // Don't throw - we don't want to fail the retirement approval if notification fails
         }
     }
 
     @Transactional
     public void createRetirementRejectedNotification(Long userId, String retirementNumber, String reason, Long retirementId) {
-        // Create in-app notification
-        Notification notification = Notification.builder()
-                .userId(userId)
-                .title("Retirement Rejected")
-                .message(String.format("Your expenditure retirement %s has been rejected. Reason: %s", retirementNumber, reason))
-                .type(NotificationType.RETIREMENT_REJECTED)
-                .relatedEntityId(retirementId)
-                .build();
-        
-        notificationRepository.save(notification);
-        log.info("Created RETIREMENT_REJECTED notification for user: {}", userId);
+        try {
+            // Create in-app notification
+            Notification notification = Notification.builder()
+                    .userId(userId)
+                    .title("Retirement Rejected")
+                    .message(String.format("Your expenditure retirement %s has been rejected. Reason: %s", retirementNumber, reason))
+                    .type(NotificationType.RETIREMENT_REJECTED)
+                    .relatedEntityId(retirementId)
+                    .isRead(false)  // ✅ ADD THIS LINE
+                    .build();
+            
+            notificationRepository.save(notification);
+            log.info("Created RETIREMENT_REJECTED notification for user: {}", userId);
 
-        // Send email
-        User user = userRepository.findById(userId).orElse(null);
-        if (user != null && user.getEmail() != null) {
-            String emailBody = emailService.buildRetirementRejectedEmail(retirementNumber, reason);
-            emailService.sendEmail(user.getEmail(), "Retirement Rejected - " + retirementNumber, emailBody);
+            // Send email
+            User user = userRepository.findById(userId).orElse(null);
+            if (user != null && user.getEmail() != null) {
+                String emailBody = emailService.buildRetirementRejectedEmail(retirementNumber, reason);
+                emailService.sendEmail(user.getEmail(), "Retirement Rejected - " + retirementNumber, emailBody);
+            }
+        } catch (Exception e) {
+            log.error("Failed to create RETIREMENT_REJECTED notification for user {}: {}", userId, e.getMessage(), e);
+            // Don't throw - we don't want to fail the retirement rejection if notification fails
         }
     }
 
+
     public List<NotificationResponse> getUserNotifications(Long userId) {
-        return notificationRepository.findByUserIdOrderByCreatedAtDesc(userId)
-                .stream()
-                .map(this::toResponse)
-                .collect(Collectors.toList());
+        log.info("Fetching notifications for user: {}", userId);
+        
+        try {
+            List<Notification> notifications = notificationRepository.findByUserIdOrderByCreatedAtDesc(userId);
+            log.info("Found {} notifications for user {}", notifications.size(), userId);
+            
+            return notifications.stream()
+                    .map(notification -> {
+                        log.debug("Mapping notification ID: {}, Title: {}, isRead: {}", 
+                            notification.getId(), 
+                            notification.getTitle(), 
+                            notification.getIsRead());
+                        return toResponse(notification);
+                    })
+                    .collect(Collectors.toList());
+        } catch (Exception e) {
+            log.error("Error fetching notifications for user {}: {}", userId, e.getMessage(), e);
+            throw e;
+        }
     }
 
     public List<NotificationResponse> getUnreadNotifications(Long userId) {
@@ -194,14 +222,14 @@ public class NotificationService {
     }
 
     private NotificationResponse toResponse(Notification notification) {
-        return NotificationResponse.builder()
-                .id(notification.getId())
-                .title(notification.getTitle())
-                .message(notification.getMessage())
-                .type(notification.getType())
-                .isRead(notification.getIsRead())
-                .createdAt(notification.getCreatedAt())
-                .relatedEntityId(notification.getRelatedEntityId())
-                .build();
-    }
+    return NotificationResponse.builder()
+            .id(notification.getId())
+            .title(notification.getTitle())
+            .message(notification.getMessage())
+            .type(notification.getType())
+            .isRead(notification.getIsRead() != null ? notification.getIsRead() : false)  // ✅ Handle null
+            .createdAt(notification.getCreatedAt())
+            .relatedEntityId(notification.getRelatedEntityId())
+            .build();
+}
 }
